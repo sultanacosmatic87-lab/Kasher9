@@ -134,11 +134,27 @@
         .camera-container { width: 100%; border-radius: 15px; overflow: hidden; margin-bottom: 10px; display: none; border: 2px solid #2c3e50; }
         footer { text-align: center; color: #888; padding: 15px; font-size: 0.8rem; margin-top: 20px; } 
 
+        /* --- إعدادات الطباعة الحرارية --- */
         @media print {
             body * { visibility: hidden; }
             #print-area, #print-area * { visibility: visible; }
-            #print-area { position: fixed; left: 0; top: 0; width: 100%; padding: 20px; }
-            .btn-row { display: none !important; }
+            #print-area { 
+                position: absolute; 
+                left: 0; 
+                top: 0; 
+                width: 100%; 
+                padding: 0; 
+                margin: 0;
+                background: white;
+            }
+            @page {
+                size: 80mm auto; /* متوافق مع طابعات 58mm و 80mm */
+                margin: 0;
+            }
+            .modal, .btn-row, header, footer { display: none !important; }
+            #store-header-print { display: block !important; border-bottom: 1px dashed #000; padding-bottom: 10px; margin-bottom: 10px; }
+            #modal-items-list table { font-size: 12px !important; border-top: 1px dashed #000; }
+            #modal-total { border-top: 1px dashed #000; padding-top: 10px; font-size: 16px !important; }
         }
     </style>
 </head>
@@ -450,7 +466,7 @@
             <div id="modal-total" style="font-size:1.4rem; font-weight:bold; text-align:center; margin-top:20px; color:#e74c3c;"></div>
         </div>
         <div class="btn-row" style="margin-top:20px; flex-wrap: wrap;">
-            <button class="btn-action bg-print" onclick="window.print()"><i class="fas fa-print"></i> طباعة</button>
+            <button class="btn-action bg-print" onclick="window.print()"><i class="fas fa-print"></i> طباعة حرارية</button>
             <button class="btn-action" style="background:#e67e22" onclick="shareToWhatsApp()"><i class="fab fa-whatsapp"></i> واتساب</button>
             <button class="btn-action" style="background:#2c3e50" onclick="exportToPDF()"><i class="fas fa-file-pdf"></i> PDF</button>
             <button class="btn-action bg-back" onclick="closeModal()">إغلاق</button>
@@ -490,7 +506,31 @@
     let users = JSON.parse(localStorage.getItem('pos_users')) || [];
     let currentUser = JSON.parse(sessionStorage.getItem('pos_logged_in_user')) || null; 
 
-    // --- وظائف الموظفين المحدثة ---
+    // --- تحديث وظيفة عرض التفاصيل للطباعة الحرارية ---
+    function showInvoiceDetails(inv, type) {
+        currentActiveInvoice = inv;
+        const storeInfo = JSON.parse(localStorage.getItem('pos_store_info')) || {};
+        const header = document.getElementById('store-header-print');
+        
+        header.style.display = 'block'; 
+        document.getElementById('print-store-name').innerText = storeInfo.name || "كاشير برو";
+        document.getElementById('print-store-address').innerText = "العنوان: " + (storeInfo.address || "غير محدد");
+        document.getElementById('print-store-phone').innerText = "هاتف: " + (storeInfo.phone || "غير محدد");
+        
+        document.getElementById('modal-title').innerText = (type === 'sales') ? "فاتورة مبيعات" : "فاتورة مشتريات";
+        document.getElementById('modal-info').innerHTML = `التاريخ: ${inv.date}<br>الجهة: ${inv.customer || 'غير محدد'}`;
+        
+        let itemsHtml = "<table style='width:100%; border-collapse:collapse; margin-top:10px;'><thead><tr style='background:#f4f4f4;'><th>المادة</th><th>الكمية</th><th>السعر</th></tr></thead><tbody>";
+        inv.items.forEach(item => { 
+            itemsHtml += `<tr><td>${item.name}</td><td style="text-align:center;">${item.qty}</td><td style="text-align:center;">${(item.price || item.cost).toLocaleString()}</td></tr>`; 
+        });
+        
+        document.getElementById('modal-items-list').innerHTML = itemsHtml + "</tbody></table>";
+        document.getElementById('modal-total').innerText = `المجموع: ${inv.total.toLocaleString()} د.ع`;
+        document.getElementById('detail-modal').style.display = 'flex';
+    }
+
+    // بقية الأكواد البرمجية كما هي تماماً
     function renderStaff() {
         const container = document.getElementById('staff-list-container');
         if(!container) return;
@@ -518,16 +558,11 @@
         const user = document.getElementById('staff-user').value;
         const pass = document.getElementById('staff-pass').value;
         const role = document.getElementById('staff-role').value;
-
         if (!name || !user || !pass) return alert("يرجى ملء كافة معلومات الموظف");
-
         staffMembers.push({ name, user, pass, role });
         localStorage.setItem('pos_staff', JSON.stringify(staffMembers));
-        
         alert("تم إنشاء حساب الموظف بنجاح");
-        document.getElementById('staff-name').value = '';
-        document.getElementById('staff-user').value = '';
-        document.getElementById('staff-pass').value = '';
+        document.getElementById('staff-name').value = ''; document.getElementById('staff-user').value = ''; document.getElementById('staff-pass').value = '';
         renderStaff();
     }
 
@@ -539,7 +574,6 @@
         }
     }
 
-    // --- تشغيل الحسابات ---
     function updateAccountsStats() {
         const todayStr = new Date().toLocaleDateString('ar-EG');
         const todaySales = salesInvoices.filter(inv => inv.date.includes(todayStr)).reduce((sum, inv) => sum + inv.total, 0);
@@ -558,7 +592,6 @@
         document.getElementById('day-expenses-total').innerText = todayExpTotal.toLocaleString() + " د.ع";
     }
 
-    // --- حفظ المصاريف ---
     function saveExpense() {
         const title = document.getElementById('exp-title').value;
         const amount = document.getElementById('exp-amount').value;
@@ -590,7 +623,6 @@
         window.scrollTo(0,0); 
     }
 
-    // --- وظائف التصدير ---
     function shareToWhatsApp() {
         if (!currentActiveInvoice) return;
         const info = JSON.parse(localStorage.getItem('pos_store_info')) || {name: "كاشير برو"};
@@ -612,7 +644,11 @@
 
     function loadStoreInfo() {
         const info = JSON.parse(localStorage.getItem('pos_store_info'));
-        if (info) { document.getElementById('store-name-info').value = info.name || ""; document.getElementById('store-address-info').value = info.address || ""; document.getElementById('store-phone-info').value = info.phone || ""; }
+        if (info) { 
+            document.getElementById('store-name-info').value = info.name || ""; 
+            document.getElementById('store-address-info').value = info.address || ""; 
+            document.getElementById('store-phone-info').value = info.phone || ""; 
+        }
     }
 
     function updateSalesTotal() {
@@ -653,20 +689,6 @@
             div.innerHTML = `<div class="report-header"><strong>فاتورة #${inv.id || index + 1}</strong><span>${inv.date}</span></div><div style="display:flex; justify-content:space-between; margin-top:5px;"><small>${inv.customer || 'بدون اسم'}</small><strong style="color:var(--text-dark)">${inv.total.toLocaleString()} د.ع</strong></div>`;
             div.onclick = () => showInvoiceDetails(inv, type); container.appendChild(div);
         });
-    }
-
-    function showInvoiceDetails(inv, type) {
-        currentActiveInvoice = inv;
-        const storeInfo = JSON.parse(localStorage.getItem('pos_store_info'));
-        const header = document.getElementById('store-header-print');
-        if(storeInfo?.name) { header.style.display = 'block'; document.getElementById('print-store-name').innerText = storeInfo.name; document.getElementById('print-store-address').innerText = "العنوان: " + storeInfo.address; document.getElementById('print-store-phone').innerText = "هاتف: " + storeInfo.phone; } else { header.style.display = 'none'; }
-        document.getElementById('modal-title').innerText = (type === 'sales') ? "فاتورة مبيعات" : "فاتورة مشتريات";
-        document.getElementById('modal-info').innerHTML = `التاريخ: ${inv.date}<br>الجهة: ${inv.customer || 'غير محدد'}`;
-        let itemsHtml = "<table style='width:100%; border-collapse:collapse; margin-top:10px;'><thead><tr style='background:#f4f4f4;'><th>المادة</th><th>الكمية</th><th>السعر</th></tr></thead><tbody>";
-        inv.items.forEach(item => { itemsHtml += `<tr><td>${item.name}</td><td style="text-align:center;">${item.qty}</td><td style="text-align:center;">${(item.price || item.cost).toLocaleString()}</td></tr>`; });
-        document.getElementById('modal-items-list').innerHTML = itemsHtml + "</tbody></table>";
-        document.getElementById('modal-total').innerText = `المجموع: ${inv.total.toLocaleString()} د.ع`;
-        document.getElementById('detail-modal').style.display = 'flex';
     }
 
     function closeModal() { document.getElementById('detail-modal').style.display = 'none'; }
@@ -738,9 +760,7 @@
         document.getElementById('edit-modal').style.display = 'flex';
     }
 
-    function closeEditModal() {
-        document.getElementById('edit-modal').style.display = 'none';
-    }
+    function closeEditModal() { document.getElementById('edit-modal').style.display = 'none'; }
 
     function saveInventoryEdit() {
         if (currentEditIndex === null) return;
@@ -750,9 +770,7 @@
         inventory[currentEditIndex].qty = newQty;
         inventory[currentEditIndex].price = newPrice;
         localStorage.setItem('pos_inventory', JSON.stringify(inventory));
-        renderInventory();
-        closeEditModal();
-        alert("تم تحديث البيانات");
+        renderInventory(); closeEditModal(); alert("تم تحديث البيانات");
     }
 
     function deleteItemFromInventory(index) {
