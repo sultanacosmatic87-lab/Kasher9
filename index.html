@@ -157,6 +157,32 @@
             #modal-items-list table { font-size: 12px !important; border-top: 1px dashed #000; }
             #modal-total { border-top: 1px dashed #000; padding-top: 10px; font-size: 16px !important; }
         }
+
+        /* تنسيق قائمة البحث الذكي */
+        #smart-search-results {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            left: 0;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 0 0 12px 12px;
+            z-index: 2000;
+            display: none;
+            max-height: 200px;
+            overflow-y: auto;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+        .search-item {
+            padding: 12px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+            text-align: right;
+            transition: 0.2s;
+        }
+        .search-item:hover {
+            background: #fdf2f4;
+        }
     </style>
 </head>
 <body onload="initializeDashboard(); checkNotifications(); loadLinkSettings(); loadUpdateSettings(); renderStaff(); loadStoreInfo();"> 
@@ -430,7 +456,13 @@
                 <input type="text" id="s-barcode" placeholder="الباركود" oninput="searchProductByBarcode(this.value)">
                 <input type="text" id="s-code" placeholder="كود المادة" oninput="searchProductByCode(this.value)">
             </div>
-            <input type="text" id="s-item-name" placeholder="اسم المادة">
+            
+            <!-- حقل اسم المادة مع البحث الذكي -->
+            <div style="position: relative;">
+                <input type="text" id="s-item-name" placeholder="اسم المادة" autocomplete="off" oninput="smartSearch(this.value)">
+                <div id="smart-search-results"></div>
+            </div>
+
             <div style="display:flex; gap:10px">
                 <input type="number" id="s-price" placeholder="السعر">
                 <input type="number" id="s-qty" value="1">
@@ -664,6 +696,57 @@
         }
     }
 
+    // وظيفة البحث الذكي للمواد في المبيعات
+    function smartSearch(val) {
+        const resultsContainer = document.getElementById('smart-search-results');
+        if (!val || val.length < 1) {
+            resultsContainer.style.display = 'none';
+            return;
+        }
+
+        const term = val.toLowerCase();
+        const matches = inventory.filter(item => 
+            item.name.toLowerCase().includes(term) || 
+            (item.code && item.code.includes(term)) ||
+            (item.barcode && item.barcode.includes(term))
+        );
+
+        if (matches.length > 0) {
+            resultsContainer.innerHTML = '';
+            matches.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'search-item';
+                div.innerHTML = `
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <strong>${item.name}</strong>
+                        <span style="font-size:0.8rem; color:#27ae60;">${item.price.toLocaleString()} د.ع</span>
+                    </div>
+                    <small style="color:#888;">المتوفر: ${item.qty} | الكود: ${item.code || '---'}</small>
+                `;
+                div.onclick = () => {
+                    document.getElementById('s-item-name').value = item.name;
+                    document.getElementById('s-price').value = item.price;
+                    document.getElementById('s-barcode').value = item.barcode || '';
+                    document.getElementById('s-code').value = item.code || '';
+                    document.getElementById('s-qty').focus();
+                    resultsContainer.style.display = 'none';
+                };
+                resultsContainer.appendChild(div);
+            });
+            resultsContainer.style.display = 'block';
+        } else {
+            resultsContainer.style.display = 'none';
+        }
+    }
+
+    // إغلاق قائمة البحث عند الضغط خارجها
+    document.addEventListener('click', function(e) {
+        if (e.target.id !== 's-item-name') {
+            const res = document.getElementById('smart-search-results');
+            if(res) res.style.display = 'none';
+        }
+    });
+
     function searchProductForReturn(barcode) {
         if(!barcode) return; const item = inventory.find(i => i.barcode === barcode);
         if (item) { document.getElementById('ret-item-name').value = item.name; document.getElementById('ret-price').value = item.price; document.getElementById('ret-qty').focus(); }
@@ -694,9 +777,9 @@
     }
 
     function addItemToPurchase() {
-        const barcode = document.getElementById('p-barcode').value, 
-              code = document.getElementById('p-code').value, 
-              name = document.getElementById('p-item-name').value, 
+        const barcode = document.getElementById('p-barcode').value.trim(), 
+              code = document.getElementById('p-code').value.trim(), 
+              name = document.getElementById('p-item-name').value.trim(), 
               qty = parseFloat(document.getElementById('p-qty').value), 
               cost = parseFloat(document.getElementById('p-cost').value), 
               price = parseFloat(document.getElementById('p-price').value);
@@ -704,16 +787,19 @@
         if (!name || isNaN(qty) || isNaN(cost) || isNaN(price)) return alert("يرجى ملء بيانات المادة كاملة");
 
         let existingIndex = tempPurchases.findIndex(item => 
-            (barcode && item.barcode === barcode) || 
-            (code && item.code === code) || 
+            (barcode !== "" && item.barcode === barcode) || 
+            (code !== "" && item.code === code) ||
             (item.name === name)
         );
 
         if (existingIndex !== -1) {
-            tempPurchases[existingIndex].qty += qty;
-            tempPurchases[existingIndex].cost = cost;
-            tempPurchases[existingIndex].price = price;
-            alert("تم تحديث كمية المادة الموجودة مسبقاً في القائمة.");
+            if(confirm(`المادة (${tempPurchases[existingIndex].name}) موجودة مسبقاً في هذه الفاتورة. هل تريد إضافة الكمية الجديدة إليها وتحديث السعر؟`)) {
+                tempPurchases[existingIndex].qty += qty;
+                tempPurchases[existingIndex].cost = cost;
+                tempPurchases[existingIndex].price = price;
+            } else {
+                return; 
+            }
         } else {
             tempPurchases.push({ barcode, code, name, qty, cost, price });
             alert("تمت إضافة المادة.");
@@ -881,6 +967,11 @@
         let disc = (document.getElementById('s-discount-type').value === 'amount') ? parseFloat(document.getElementById('s-discount-val').value) || 0 : (price * qty) * ((parseFloat(document.getElementById('s-discount-val').value) || 0) / 100);
         tempSales.push({ name, qty, price, discount: disc });
         renderCartTable(); updateSalesTotal();
+        document.getElementById('s-item-name').value = "";
+        document.getElementById('s-qty').value = "1";
+        document.getElementById('s-price').value = "";
+        document.getElementById('s-barcode').value = "";
+        document.getElementById('s-code').value = "";
     }
 
     function renderCartTable() {
@@ -947,7 +1038,6 @@
     function loadStoreInfo() { const info = JSON.parse(localStorage.getItem('pos_store_info')); if(info) { document.getElementById('store-name-info').value = info.name; document.getElementById('store-address-info').value = info.address; document.getElementById('store-phone-info').value = info.phone; } }
     function saveStoreInfo() { localStorage.setItem('pos_store_info', JSON.stringify({ name: document.getElementById('store-name-info').value, address: document.getElementById('store-address-info').value, phone: document.getElementById('store-phone-info').value })); alert("تم الحفظ"); }
 
-    // --- تحديث التقارير لتكون طولية ومنظمة ---
     function renderReports(type) {
         const container = document.getElementById('reports-list-container');
         document.getElementById('report-title').innerText = (type === 'sales') ? "سجل فواتير المبيعات" : "سجل فواتير المشتريات";
@@ -956,7 +1046,6 @@
         data.slice().reverse().forEach(inv => {
             const div = document.createElement('div'); 
             div.className = 'report-box';
-            // البيانات هنا أصبحت طولية ومرتبة بدلاً من سطر واحد
             div.innerHTML = `
                 <div style="display:flex; flex-direction:column; gap:5px; text-align:right;">
                     <span><i class="fas fa-calendar-alt"></i> <b>التاريخ:</b> ${inv.date}</span>
@@ -996,7 +1085,6 @@
         container.innerHTML = html;
     }
 
-    // --- تحديث حركة مادة لتشمل البحث بالتاريخ ---
     function renderProductMovement() {
         const container = document.getElementById('reports-list-container');
         document.getElementById('report-title').innerText = "تقرير حركة مادة تفصيلي";
@@ -1039,7 +1127,6 @@
         ];
 
         allInvoices.forEach(inv => {
-            // محاولة توحيد تنسيق التاريخ للمقارنة
             let invDatePart = inv.date.split(',')[0].split('/').reverse().join('-'); 
             
             if (dateFrom && invDatePart < dateFrom) return;
